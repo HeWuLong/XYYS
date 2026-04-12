@@ -64,6 +64,14 @@
       "root": "pages_admin",
       "pages": [
         {
+          "path": "login/index",
+          "style": {
+            "navigationBarTitleText": "管理员登录",
+            "navigationBarBackgroundColor": "#1e1e2d",
+            "navigationBarTextStyle": "white"
+          }
+        },
+        {
           "path": "dashboard/index",
           "style": {
             "navigationBarTitleText": "管理控制台",

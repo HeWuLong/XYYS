@@ -3,25 +3,27 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.vod.server.entity.domain.VodCategory;
 import com.vod.server.mapper.VodCategoryMapper;
-import com.vod.server.service.VodCategoryService;
+import com.vod.server.service.IVodCategoryService;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 @Service
-public class VodCategoryServiceImpl extends ServiceImpl<VodCategoryMapper, VodCategory> implements VodCategoryService {
+public class VodCategoryServiceImpl extends ServiceImpl<VodCategoryMapper, VodCategory> implements IVodCategoryService {
     @Override
-    @Transactional
     public VodCategory getOrCreate(String categoryName) {
-        LambdaQueryWrapper<VodCategory> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(VodCategory::getName, categoryName);
-        VodCategory category = this.getOne(wrapper);
-        if (category != null) {
-            return category;
+        if (!StringUtils.hasText(categoryName)) {
+            categoryName = "未分类";
         }
-        category = new VodCategory();
-        category.setName(categoryName);
-        category.setSortWeight(0);
-        this.save(category);
+        VodCategory category = this.getOne(
+                new LambdaQueryWrapper<VodCategory>()
+                        .eq(VodCategory::getName, categoryName) // 假设你的表里分类名称字段叫 name
+                        .last("LIMIT 1")
+        );
+        if (category == null) {
+            category = new VodCategory();
+            category.setName(categoryName);
+            this.save(category);
+        }
         return category;
     }
 }

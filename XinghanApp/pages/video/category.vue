@@ -1,37 +1,38 @@
 <template>
   <view class="category-container">
-    <global-nav />
+    <global-nav activeMenu="分类" />
 
     <view class="filter-panel">
       <view class="filter-row">
-        <text class="filter-label">类型:</text>
+        <text class="filter-label">分类</text>
         <view class="filter-items">
-          <text class="f-item" :class="{ active: query.type === item }" 
-                v-for="(item, index) in filters.types" :key="index"
-                @click="updateFilter('type', item)">{{ item }}</text>
+          <text class="f-item" :class="{ active: query.categoryId === item.id }" v-for="item in categoryFilters" :key="item.id" @click="updateFilter('categoryId', item.id)">{{ item.name }}</text>
         </view>
       </view>
 
       <view class="filter-row">
-        <text class="filter-label">地区:</text>
+        <text class="filter-label">类型</text>
         <view class="filter-items">
-          <text class="f-item" :class="{ active: query.region === item }" 
-                v-for="(item, index) in filters.regions" :key="index"
-                @click="updateFilter('region', item)">{{ item }}</text>
+          <text class="f-item" :class="{ active: query.type === item }" v-for="item in filters.types" :key="item" @click="updateFilter('type', item)">{{ item }}</text>
         </view>
       </view>
 
       <view class="filter-row">
-        <text class="filter-label">年份:</text>
+        <text class="filter-label">地区</text>
         <view class="filter-items">
-          <text class="f-item" :class="{ active: query.year === item }" 
-                v-for="(item, index) in filters.years" :key="index"
-                @click="updateFilter('year', item)">{{ item }}</text>
+          <text class="f-item" :class="{ active: query.region === item }" v-for="item in filters.regions" :key="item" @click="updateFilter('region', item)">{{ item }}</text>
         </view>
       </view>
 
-      <view class="filter-row" style="margin-bottom: 0;">
-        <text class="filter-label">排序:</text>
+      <view class="filter-row">
+        <text class="filter-label">年份</text>
+        <view class="filter-items">
+          <text class="f-item" :class="{ active: query.year === item }" v-for="item in filters.years" :key="item" @click="updateFilter('year', item)">{{ item }}</text>
+        </view>
+      </view>
+
+      <view class="filter-row">
+        <text class="filter-label">排序</text>
         <view class="filter-items">
           <text class="f-item" :class="{ active: query.sort === '综合' }" @click="updateFilter('sort', '综合')">综合</text>
           <text class="f-item" :class="{ active: query.sort === '最新' }" @click="updateFilter('sort', '最新')">最新</text>
@@ -45,12 +46,11 @@
       <view class="video-card" v-for="video in videoList" :key="video.id" @click="goDetail(video.id)">
         <view class="poster-wrap">
           <image class="poster" :src="video.posterUrl || '/static/default-poster.png'" mode="aspectFill"></image>
-          <view class="tag-status">{{ video.updateStatus || '已完结' }}</view>
-          <view class="score-tag" v-if="video.score">豆瓣 {{ video.score }}</view>
+          <view class="tag-status">{{ video.updateStatus || '更新中' }}</view>
         </view>
         <view class="video-info">
           <text class="video-title">{{ video.title }}</text>
-          <text class="video-sub">{{ video.subCategory || video.region }}</text>
+          <text class="video-sub">{{ video.subCategory || video.region || '未知' }}</text>
         </view>
       </view>
     </view>
@@ -64,217 +64,119 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch } from 'vue';
+import { reactive, ref, watch } from 'vue';
 import { onLoad, onReachBottom } from '@dcloudio/uni-app';
 import request from '@/utils/request.js';
 
-// 定义筛选维度的静态数据
+const CATEGORY_CACHE_KEY = 'cache:category:list:v1';
+const QUERY_CACHE_TTL = 60 * 1000;
+const queryCache = new Map();
+
 const filters = reactive({
   types: ['全部', '剧情', '喜剧', '动作', '科幻', '爱情', '悬疑', '动画', '惊悚', '武侠'],
   regions: ['全部', '大陆', '日韩', '欧美', '港台', '泰国', '印度', '其他'],
   years: ['全部', '2026', '2025', '2024', '2023', '2022', '2021', '10年代', '更早']
 });
 
-// 当前选中的查询参数
-const query = reactive({
-  type: '全部',
-  region: '全部',
-  year: '全部',
-  sort: '最热',
-  page: 1,
-  size: 16
-});
+const categoryFilters = ref([{ id: null, name: '全部' }]);
+const query = reactive({ categoryId: null, type: '全部', region: '全部', year: '全部', sort: '最热', page: 1, size: 18 });
 
 const videoList = ref([]);
 const loading = ref(false);
 const noMore = ref(false);
+let debounceTimer = null;
 
-// 监听查询参数的变化，任何筛选条件改变，都重置列表并重新请求
-watch(() => [query.type, query.region, query.year, query.sort], () => {
-  loadData(true);
+watch(() => [query.categoryId, query.type, query.region, query.year, query.sort], () => {
+  if (debounceTimer) clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => loadData(true), 220);
 });
 
-onLoad((options) => {
-  // 接收从首页点过来的大类 ID 或 类型名，初始化筛选面板
-  if (options.type) query.type = options.type;
-  loadData(true);
-});
+const updateFilter = (key, value) => { query[key] = value; };
+const goDetail = (id) => uni.navigateTo({ url: `/pages/video/detail?id=${id}` });
 
-onReachBottom(() => {
-  loadData();
-});
-
-// 更新筛选条件的方法
-const updateFilter = (key, value) => {
-  query[key] = value;
+const loadCategories = async () => {
+  try {
+    const local = uni.getStorageSync(CATEGORY_CACHE_KEY);
+    if (local?.expireAt > Date.now() && Array.isArray(local.data)) {
+      categoryFilters.value = [{ id: null, name: '全部' }, ...local.data.map((c) => ({ id: c.id, name: c.name || `分类${c.id}` }))];
+      return;
+    }
+    const res = await request({ url: '/app/category/list' });
+    const categories = Array.isArray(res) ? res : [];
+    const normalized = categories.map((c) => ({ id: c.id, name: c.name || `分类${c.id}` }));
+    categoryFilters.value = [{ id: null, name: '全部' }, ...normalized];
+    uni.setStorageSync(CATEGORY_CACHE_KEY, { data: normalized, expireAt: Date.now() + 5 * 60 * 1000 });
+  } catch (e) {}
 };
 
-// 跳转到详情页
-const goDetail = (id) => {
-  uni.navigateTo({ url: `/pages/video/detail?id=${id}` });
-};
-
-// 加载数据
 const loadData = async (reset = false) => {
   if (loading.value || (noMore.value && !reset)) return;
-  
   if (reset) {
     query.page = 1;
     noMore.value = false;
     videoList.value = [];
   }
-  
-  loading.value = true;
-  
-  try {
-    // 这里是对接后端的真实接口：将“全部”转换为空字符串发给后端
-    /* const res = await request({
-      url: '/app/video/list',
-      data: {
-        type: query.type === '全部' ? '' : query.type,
-        region: query.region === '全部' ? '' : query.region,
-        year: query.year === '全部' ? '' : query.year,
-        sort: query.sort,
-        page: query.page,
-        size: query.size
-      }
-    });
-    */
-   
-    // 模拟后端返回数据
-    setTimeout(() => {
-      const mockData = [];
-      for (let i = 0; i < 8; i++) {
-        mockData.push({
-          id: i + (query.page * 10),
-          title: `检索测试影片 ${i}`,
-          posterUrl: '',
-          updateStatus: 'HD中字',
-          score: '8.5',
-          subCategory: query.type === '全部' ? '热门' : query.type,
-          region: query.region === '全部' ? '全球' : query.region
-        });
-      }
-      
-      if (mockData.length < query.size) noMore.value = true;
-      videoList.value = reset ? mockData : [...videoList.value, ...mockData];
-      query.page++;
-      loading.value = false;
-    }, 500); // 模拟网络延迟
 
-  } catch (error) {
-    console.error('加载检索视频失败', error);
+  loading.value = true;
+  try {
+    const cacheKey = JSON.stringify({
+      categoryId: query.categoryId, type: query.type, region: query.region, year: query.year, sort: query.sort, page: query.page, size: query.size
+    });
+
+    let res;
+    const cacheItem = queryCache.get(cacheKey);
+    if (cacheItem && cacheItem.expireAt > Date.now()) {
+      res = cacheItem.data;
+    } else {
+      res = await request({
+        url: '/app/video/list',
+        data: {
+          categoryId: query.categoryId || undefined,
+          type: query.type === '全部' ? '' : query.type,
+          region: query.region === '全部' ? '' : query.region,
+          year: query.year === '全部' ? '' : query.year,
+          sort: query.sort,
+          page: query.page,
+          size: query.size
+        }
+      });
+      queryCache.set(cacheKey, { data: res, expireAt: Date.now() + QUERY_CACHE_TTL });
+    }
+
+    const records = res?.records || [];
+    videoList.value = reset ? records : [...videoList.value, ...records];
+    if (records.length < query.size) noMore.value = true;
+    query.page++;
+  } finally {
     loading.value = false;
   }
 };
+
+onLoad(async (options) => {
+  await loadCategories();
+  if (options.type && options.type !== '全部') query.type = options.type;
+  loadData(true);
+});
+
+onReachBottom(() => loadData(false));
 </script>
 
 <style scoped>
-.category-container {
-  min-height: 100vh;
-  background-color: #111114;
-  padding-top: 100rpx; /* 给顶部 fixed 的 global-nav 留出空间 */
-  color: #fff;
-}
-
-/* 筛选面板样式 */
-.filter-panel {
-  background-color: #1a1a20;
-  padding: 30rpx 40rpx;
-  margin-bottom: 30rpx;
-}
-
-.filter-row {
-  display: flex;
-  align-items: flex-start;
-  margin-bottom: 30rpx;
-}
-
-.filter-label {
-  color: #888;
-  font-size: 28rpx;
-  width: 100rpx; /* 固定宽度，让后面的按钮对齐 */
-  margin-top: 6rpx;
-  font-weight: bold;
-}
-
-.filter-items {
-  flex: 1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16rpx 20rpx;
-}
-
-.f-item {
-  padding: 6rpx 24rpx;
-  background-color: #2a2a35;
-  color: #ccc;
-  border-radius: 8rpx;
-  font-size: 26rpx;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.f-item:hover {
-  color: #00d26a;
-  background-color: rgba(0, 210, 106, 0.1);
-}
-
-.f-item.active {
-  background-color: #00d26a;
-  color: #fff;
-  font-weight: bold;
-}
-
-/* 视频网格 (复用全局风格) */
-.video-grid {
-  padding: 0 30rpx;
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 30rpx;
-}
-@media (min-width: 768px) { 
-  .video-grid { grid-template-columns: repeat(6, 1fr); } 
-}
-
-.video-card {
-  background-color: #1a1a20;
-  border-radius: 12rpx;
-  overflow: hidden;
-  cursor: pointer;
-  transition: transform 0.2s;
-}
-.video-card:hover {
-  transform: translateY(-8rpx);
-}
-.poster-wrap {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 2 / 3;
-}
-.poster { width: 100%; height: 100%; }
-.tag-status {
-  position: absolute; right: 10rpx; top: 10rpx;
-  background: #00d26a; color: #fff;
-  font-size: 20rpx; padding: 4rpx 10rpx; border-radius: 6rpx; font-weight: bold;
-}
-.score-tag {
-  position: absolute; left: 10rpx; bottom: 10rpx;
-  background: rgba(0,0,0,0.7); color: #f39c12;
-  font-size: 22rpx; padding: 4rpx 10rpx; border-radius: 6rpx;
-}
-.video-info { padding: 20rpx; }
-.video-title {
-  font-size: 28rpx; color: #e5e5e5; display: block;
-  margin-bottom: 8rpx; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.video-sub { font-size: 24rpx; color: #666; }
-
-/* 底部状态 */
-.loading-status {
-  text-align: center;
-  font-size: 24rpx;
-  color: #666;
-  padding: 40rpx 0;
-}
+.category-container { min-height: 100vh; background: #0b0f19; color: #fff; padding-top: 96rpx; }
+.filter-panel { background: #101622; padding: 20rpx 18rpx; border-bottom: 1rpx solid #202a3c; }
+.filter-row { display: flex; align-items: flex-start; margin-bottom: 14rpx; }
+.filter-row:last-child { margin-bottom: 0; }
+.filter-label { width: 70rpx; color: #6f7b94; font-size: 22rpx; margin-top: 6rpx; }
+.filter-items { flex: 1; display: flex; flex-wrap: wrap; gap: 10rpx; }
+.f-item { background: #1a2232; color: #9eabc4; font-size: 20rpx; padding: 8rpx 14rpx; border-radius: 8rpx; border: 1rpx solid transparent; }
+.f-item.active { color: #18d96b; border-color: #18d96b; background: rgba(24, 217, 107, 0.1); }
+.video-grid { padding: 16rpx 18rpx 20rpx; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14rpx; }
+.video-card { background: #141a27; border: 1rpx solid #212b3d; border-radius: 10rpx; overflow: hidden; }
+.poster-wrap { position: relative; }
+.poster { width: 100%; height: 190rpx; }
+.tag-status { position: absolute; right: 8rpx; top: 8rpx; background: #18d96b; color: #fff; font-size: 18rpx; padding: 2rpx 7rpx; border-radius: 6rpx; }
+.video-info { padding: 10rpx; }
+.video-title { display: block; color: #e8edf7; font-size: 22rpx; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.video-sub { display: block; margin-top: 6rpx; color: #7e8da8; font-size: 20rpx; }
+.loading-status { text-align: center; color: #6f809f; font-size: 22rpx; padding: 16rpx 0 24rpx; }
 </style>

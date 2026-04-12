@@ -5,52 +5,42 @@
         <text class="close-icon">×</text>
       </view>
     </view>
-
     <view class="logo-box">
       <image class="logo" src="/static/logo.png" mode="aspectFit"></image>
       <text class="app-name">星瀚影视</text>
     </view>
-
     <view class="form-box">
       <view class="tabs">
         <text class="tab" :class="{ active: isLogin }" @click="isLogin = true">登录</text>
         <text class="tab" :class="{ active: !isLogin }" @click="isLogin = false">注册</text>
       </view>
-
       <view class="input-group">
         <input class="input-item" type="text" v-model="formData.username" placeholder="请输入用户名/手机号" placeholder-class="ph-color"/>
       </view>
-      
       <view class="input-group">
         <input class="input-item" type="password" v-model="formData.password" placeholder="请输入密码" placeholder-class="ph-color"/>
       </view>
-
       <view class="input-group" v-if="!isLogin">
         <input class="input-item" type="text" v-model="formData.inviteCode" placeholder="邀请码 (选填)" placeholder-class="ph-color"/>
       </view>
-
       <view class="action-row" v-if="isLogin">
         <text class="forgot-pwd" @click="goForgot">忘记密码？</text>
       </view>
-
       <button class="submit-btn" @click="handleSubmit">
         {{ isLogin ? '立 即 登 录' : '注 册 并 登 录' }}
       </button>
     </view>
   </view>
 </template>
-
 <script setup>
 import { ref, reactive } from 'vue';
 import request from '@/utils/request.js';
-
 const isLogin = ref(true);
 const formData = reactive({
   username: '',
   password: '',
   inviteCode: ''
 });
-
 // 关闭页面/游客模式
 const handleClose = () => {
   const pages = getCurrentPages();
@@ -60,15 +50,12 @@ const handleClose = () => {
     uni.reLaunch({ url: '/pages/index/index' });
   }
 };
-
 const handleSubmit = async () => {
   if (!formData.username || !formData.password) {
     return uni.showToast({ title: '账号和密码不能为空', icon: 'none' });
   }
-
-  // 加上 mask: true 防止连点
+  // 防止连点
   uni.showLoading({ title: '请稍候...', mask: true });
-  
   try {
     if (isLogin.value) {
       // 执行登录
@@ -77,11 +64,8 @@ const handleSubmit = async () => {
         method: 'POST',
         data: { username: formData.username, password: formData.password }
       });
-      
-      // 登录成功，关掉 loading，再弹 toast
       uni.hideLoading();
-      
-      // 存储凭证
+      // 存储TOKEN
       uni.setStorageSync('token', res.token);
       uni.setStorageSync('userInfo', res);
       
@@ -89,7 +73,6 @@ const handleSubmit = async () => {
       setTimeout(() => {
         uni.reLaunch({ url: '/pages/index/index' });
       }, 1000);
-      
     } else {
       // 执行注册
       await request({
@@ -97,15 +80,11 @@ const handleSubmit = async () => {
         method: 'POST',
         data: formData
       });
-      
-      // 注册成功，关掉 loading，再弹 toast
       uni.hideLoading();
       uni.showToast({ title: '注册成功，请登录', icon: 'success' });
-      isLogin.value = true; // 自动切回登录态
+      isLogin.value = true; 
     }
   } catch (err) {
-    // 错误信息已在 request.js 中处理，并且那边已经调用过 hideLoading() 了
-    // 这里什么都不写，彻底解决配对报错警告！
   }
 };
 

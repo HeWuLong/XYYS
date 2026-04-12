@@ -16,7 +16,6 @@ public class VodUser {
     private Long inviterId;
     private LocalDateTime vipExpireTime;
     private Integer coins;
-
     @TableLogic
     private Integer isDeleted;
     @TableField(fill = FieldFill.INSERT)

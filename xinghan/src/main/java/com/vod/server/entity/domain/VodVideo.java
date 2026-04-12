@@ -17,7 +17,10 @@ public class VodVideo {
     private String sourceId;
     private String playFormat;
     private String playUrl;
-    private String extInfo;      // JSON 字符串，实际可用 MySQL JSON 类型
+    private String extInfo;
+    private Integer episodeCount;
+    private String updateStatus;
+    private String subCategory;
     @TableLogic
     private Integer isDeleted;
     @TableField(fill = FieldFill.INSERT)

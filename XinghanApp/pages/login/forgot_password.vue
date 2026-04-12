@@ -4,50 +4,40 @@
       <text class="title">重置密码</text>
       <text class="subtitle">请输入您的注册账号进行安全验证</text>
     </view>
-
     <view class="form-box">
       <view class="input-group">
         <input class="input-item" type="text" v-model="form.account" placeholder="请输入用户名/邮箱" placeholder-class="ph-color"/>
       </view>
-
       <view class="input-group code-group">
         <input class="input-item" type="number" v-model="form.code" placeholder="验证码" placeholder-class="ph-color"/>
         <text class="code-btn" :class="{ disabled: countdown > 0 }" @click="sendCode">
           {{ countdown > 0 ? `${countdown}s 后重发` : '获取验证码' }}
         </text>
       </view>
-      
       <view class="input-group">
         <input class="input-item" type="password" v-model="form.newPassword" placeholder="请输入新密码" placeholder-class="ph-color"/>
       </view>
-      
       <view class="input-group">
         <input class="input-item" type="password" v-model="form.confirmPassword" placeholder="请确认新密码" placeholder-class="ph-color"/>
       </view>
-
       <button class="submit-btn" @click="handleReset">确 认 重 置</button>
     </view>
   </view>
 </template>
-
 <script setup>
 import { ref, reactive } from 'vue';
 // import request from '@/utils/request.js'; // 待后端提供对应接口后启用
-
 const form = reactive({
   account: '',
   code: '',
   newPassword: '',
   confirmPassword: ''
 });
-
 const countdown = ref(0);
 let timer = null;
-
 const sendCode = () => {
   if (!form.account) return uni.showToast({ title: '请输入账号', icon: 'none' });
   if (countdown.value > 0) return;
-
   // 模拟发送验证码接口
   uni.showToast({ title: '验证码已发送', icon: 'success' });
   countdown.value = 60;
@@ -58,7 +48,6 @@ const sendCode = () => {
     }
   }, 1000);
 };
-
 const handleReset = async () => {
   if (!form.account || !form.code || !form.newPassword) {
     return uni.showToast({ title: '请完整填写表单', icon: 'none' });

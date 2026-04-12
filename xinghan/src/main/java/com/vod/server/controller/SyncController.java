@@ -15,7 +15,7 @@ public class SyncController {
     @PostMapping("/video")
     public Map<String, Object> syncVideo() {
         long start = System.currentTimeMillis();
-        videoSyncTask.manualSync();   // 您已有的方法
+        videoSyncTask.manualSync();
         long cost = System.currentTimeMillis() - start;
         Map<String, Object> result = new HashMap<>();
         result.put("success", true);

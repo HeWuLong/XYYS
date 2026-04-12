@@ -1,107 +1,129 @@
 <template>
-  <view class="container">
-    <global-nav /> <swiper class="banner-swiper" circular autoplay indicator-dots indicator-active-color="#00d26a">
-      <swiper-item v-for="(item, index) in banners" :key="index">
-        <image class="banner-img" :src="item.pic" mode="aspectFill"></image>
-        <view class="banner-title-mask"><text class="banner-title">{{ item.title }}</text></view>
-      </swiper-item>
-    </swiper>
+  <view class="home-container">
+    <global-nav activeMenu="首页" />
 
-    <view class="category-block" v-for="section in homeData" :key="section.categoryId">
-      <view class="section-header">
-        <text class="section-title">{{ section.categoryName }}</text>
-        <view class="more-btn" @click="goCategoryFilter(section.categoryId)">
-          <text>查看更多</text> <text class="arrow">></text>
-        </view>
-      </view>
-      
-      <view class="video-grid">
-        <view class="video-card" v-for="video in section.videos" :key="video.id" @click="goDetail(video.id)">
-          <view class="poster-wrap">
-            <image class="poster" :src="video.posterUrl || '/static/default-poster.png'" mode="aspectFill"></image>
-            <view class="tag-status">{{ video.updateStatus || '已完结' }}</view>
-            <view class="score-tag" v-if="video.score">豆瓣 {{ video.score }}分</view>
-          </view>
-          <view class="video-info">
-            <text class="video-title">{{ video.title }}</text>
-            <text class="video-sub">{{ video.subCategory || '精彩推荐' }}</text>
-          </view>
-        </view>
+    <view class="hero-wrap">
+      <swiper class="banner-swiper" circular autoplay indicator-dots>
+        <swiper-item v-for="item in bannerList" :key="item.id">
+          <image class="banner-img" :src="item.posterUrl || '/static/default-poster.png'" mode="aspectFill" @click="goDetail(item.id)" />
+        </swiper-item>
+      </swiper>
+    </view>
+
+    <view class="mini-tabs">
+      <view class="tab-item" v-for="nav in quickNavs" :key="nav.id" @click="goCategory(nav.name)">
+        <text class="tab-icon">{{ nav.icon }}</text>
+        <text class="tab-text">{{ nav.name }}</text>
       </view>
     </view>
+
+    <view class="video-section">
+      <view class="section-title">热播榜</view>
+      <view class="list-wrapper">
+        <view class="video-card" v-for="video in videoList" :key="video.id" @click="goDetail(video.id)">
+          <view class="cover-wrap">
+            <image class="cover" :src="video.posterUrl || '/static/default-poster.png'" mode="aspectFill" />
+            <view class="badge">{{ video.updateStatus || '更新中' }}</view>
+          </view>
+          <text class="title">{{ video.title }}</text>
+          <text class="desc">{{ video.subCategory || video.region || '精彩推荐' }}</text>
+        </view>
+      </view>
+      <view class="load-status">
+        <text v-if="loading">加载中...</text>
+        <text v-else-if="noMore">已经到底啦</text>
+      </view>
+    </view>
+
+    <view class="go-top" v-if="showTop" @click="scrollToTop">↑</view>
   </view>
 </template>
 
 <script setup>
 import { ref } from 'vue';
-import { onLoad } from '@dcloudio/uni-app';
+import { onLoad, onReachBottom, onPullDownRefresh, onPageScroll } from '@dcloudio/uni-app';
+import GlobalNav from '@/components/global-nav/global-nav.vue';
 import request from '@/utils/request.js';
 
-// 模拟轮播数据
-const banners = ref([
-  { title: '阿凡达：水之道', pic: 'https://images.unsplash.com/photo-1626814026160-2237a95fc5a0?auto=format&fit=crop&w=800&q=80' }
+const bannerList = ref([]);
+const videoList = ref([]);
+const quickNavs = ref([
+  { id: 1, name: '电影', icon: '🎬' },
+  { id: 2, name: '剧集', icon: '📺' },
+  { id: 3, name: '动漫', icon: '🧩' },
+  { id: 4, name: '综艺', icon: '🎤' }
 ]);
 
-// 核心数据结构：按大类分组的视频列表
-const homeData = ref([]);
+const pageNum = ref(1);
+const pageSize = 12;
+const loading = ref(false);
+const noMore = ref(false);
+const showTop = ref(false);
 
-onLoad(() => {
-  loadHomeData();
+const fetchHomeData = async (reset = false) => {
+  if (loading.value || (noMore.value && !reset)) return;
+  if (reset) {
+    pageNum.value = 1;
+    noMore.value = false;
+    videoList.value = [];
+  }
+  loading.value = true;
+  try {
+    if (reset) {
+      const banners = await request({ url: '/app/video/banner' });
+      bannerList.value = banners || [];
+    }
+    const pageData = await request({
+      url: '/app/video/list',
+      data: { sort: '最热', page: pageNum.value, size: pageSize }
+    });
+    const records = pageData?.records || [];
+    videoList.value = reset ? records : [...videoList.value, ...records];
+    if (records.length < pageSize) noMore.value = true;
+    pageNum.value += 1;
+  } finally {
+    loading.value = false;
+    uni.stopPullDownRefresh();
+  }
+};
+
+onLoad(() => fetchHomeData(true));
+onPullDownRefresh(() => fetchHomeData(true));
+onReachBottom(() => fetchHomeData(false));
+
+onPageScroll((e) => {
+  showTop.value = e.scrollTop > 500;
 });
 
-const loadHomeData = async () => {
-  // 真实开发中，后端应提供一个合并接口如 /app/home/data 返回各分类及前6个视频
-  // 这里模拟数据结构
-  homeData.value = [
-    {
-      categoryId: 1,
-      categoryName: '近期热门电影',
-      videos: [
-        { id: 1, title: '逐玉', posterUrl: '', updateStatus: '全40集', score: '7.9', subCategory: '古装 / 爱情' },
-        { id: 2, title: '流浪地球2', posterUrl: '', updateStatus: 'HD', score: '8.3', subCategory: '科幻 / 灾难' }
-      ]
-    },
-    {
-      categoryId: 2,
-      categoryName: '热播电视剧',
-      videos: [] // 数据同上
-    }
-  ];
+const scrollToTop = () => {
+  uni.pageScrollTo({ scrollTop: 0, duration: 300 });
 };
 
-const goDetail = (id) => {
-  uni.navigateTo({ url: `/pages/video/detail?id=${id}` });
-};
-
-// 点击查看更多，进入筛选页 (对应图2)
-const goCategoryFilter = (categoryId) => {
-  uni.navigateTo({ url: `/pages/video/category?id=${categoryId}` });
-};
+const goDetail = (id) => uni.navigateTo({ url: `/pages/video/detail?id=${id}` });
+const goCategory = (typeName) => uni.navigateTo({ url: `/pages/video/category?type=${encodeURIComponent(typeName)}` });
 </script>
 
 <style scoped>
-.container { min-height: 100vh; background-color: #111114; color: #fff; padding-top: 100rpx; padding-bottom: 40rpx;}
-.banner-swiper { width: 100%; height: 450rpx; position: relative;}
+.home-container { min-height: 100vh; background: #0b0f19; color: #fff; padding-top: 96rpx; }
+.hero-wrap { padding: 16rpx 18rpx 0; }
+.banner-swiper { height: 380rpx; border-radius: 14rpx; overflow: hidden; }
 .banner-img { width: 100%; height: 100%; }
-.banner-title-mask { position: absolute; bottom: 0; left: 0; width: 100%; padding: 40rpx 20rpx 20rpx; background: linear-gradient(to top, rgba(17,17,20,1), transparent); }
-.banner-title { font-size: 36rpx; font-weight: bold; }
 
-.category-block { padding: 40rpx 30rpx 0; }
-.section-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 30rpx; }
-.section-title { font-size: 40rpx; font-weight: bold; color: #fff; }
-.more-btn { font-size: 26rpx; color: #888; display: flex; align-items: center; cursor: pointer; transition: color 0.3s;}
-.more-btn:hover { color: #00d26a; }
+.mini-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14rpx; padding: 20rpx 18rpx; }
+.tab-item { background: #161c29; border: 1rpx solid #222b3b; border-radius: 12rpx; padding: 16rpx 0; display: flex; flex-direction: column; align-items: center; }
+.tab-icon { font-size: 30rpx; }
+.tab-text { color: #c5cede; font-size: 22rpx; margin-top: 6rpx; }
 
-.video-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 30rpx; }
-@media (min-width: 768px) { .video-grid { grid-template-columns: repeat(4, 1fr); } } /* PC端适配4列 */
+.video-section { padding: 0 18rpx 24rpx; }
+.section-title { font-size: 34rpx; font-weight: 700; margin-bottom: 16rpx; }
+.list-wrapper { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14rpx; }
+.video-card { background: #141a27; border-radius: 10rpx; overflow: hidden; border: 1rpx solid #20293a; }
+.cover-wrap { position: relative; }
+.cover { width: 100%; height: 190rpx; }
+.badge { position: absolute; right: 8rpx; top: 8rpx; background: #18d96b; color: #fff; font-size: 18rpx; padding: 2rpx 8rpx; border-radius: 6rpx; }
+.title { display: block; color: #e9edf5; font-size: 22rpx; padding: 10rpx 10rpx 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.desc { display: block; color: #7f8ca3; font-size: 20rpx; padding: 6rpx 10rpx 10rpx; }
+.load-status { text-align: center; color: #71809c; font-size: 22rpx; padding: 20rpx 0; }
 
-.video-card { background-color: #1a1a20; border-radius: 12rpx; overflow: hidden; cursor: pointer; transition: transform 0.2s;}
-.video-card:hover { transform: translateY(-10rpx); }
-.poster-wrap { position: relative; width: 100%; aspect-ratio: 2 / 3; }
-.poster { width: 100%; height: 100%; }
-.tag-status { position: absolute; right: 10rpx; top: 10rpx; background: #00d26a; color: #fff; font-size: 20rpx; padding: 4rpx 10rpx; border-radius: 6rpx; font-weight: bold;}
-.score-tag { position: absolute; left: 10rpx; bottom: 10rpx; background: rgba(0,0,0,0.7); color: #f39c12; font-size: 22rpx; padding: 4rpx 10rpx; border-radius: 6rpx; }
-.video-info { padding: 20rpx; }
-.video-title { font-size: 30rpx; color: #e5e5e5; display: block; margin-bottom: 8rpx; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
-.video-sub { font-size: 24rpx; color: #666; }
+.go-top { position: fixed; right: 24rpx; bottom: 120rpx; width: 64rpx; height: 64rpx; background: #18d96b; color: #fff; border-radius: 50%; text-align: center; line-height: 64rpx; font-size: 34rpx; z-index: 1000; box-shadow: 0 6rpx 20rpx rgba(24, 217, 107, 0.35); }
 </style>

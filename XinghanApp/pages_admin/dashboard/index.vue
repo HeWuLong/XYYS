@@ -1,215 +1,199 @@
 <template>
-  <view class="admin-dashboard">
-    <view class="admin-header">
-      <view class="header-left">
-        <text class="logo-text">星瀚影视 - 管理控制台</text>
+  <view class="admin-container">
+    <view class="header">
+      <text class="title">星瀚控制台</text>
+      <text class="subtitle">管理员：{{ userInfo.username || '-' }}</text>
+    </view>
+
+    <view class="ops-row">
+      <button class="btn" @click="loadSourceList">刷新源列表</button>
+      <button class="btn btn-primary" @click="syncVideo">立即同步视频</button>
+      <button class="btn btn-warn" @click="logout">退出</button>
+    </view>
+
+    <view class="panel">
+      <text class="panel-title">源 API 管理（增删改查）</text>
+      <view class="tip">API格式示例：https://caiji.xxx.com/api.php/provide/vod/at/json</view>
+
+      <view class="form-grid">
+        <input class="input" v-model="form.sourceName" placeholder="API名字（如：茅台m3u8）" placeholder-class="ph" />
+        <input class="input" v-model="form.apiUrl" placeholder="API地址（必填）" placeholder-class="ph" />
+        <input class="input" v-model="form.domainUrl" placeholder="域名（如：https://caiji.xxx.com）" placeholder-class="ph" />
       </view>
-      <view class="header-right">
-        <text class="admin-name">管理员: {{ adminName }}</text>
-        <view class="logout-tag" @click="handleAdminLogout">退出登录</view>
+      <view class="ops-row">
+        <button class="btn btn-primary" @click="saveSource">新增源</button>
+        <button class="btn" @click="clearForm">清空表单</button>
+      </view>
+
+      <view class="source-list">
+        <view class="source-item" v-for="item in sourceList" :key="item.id">
+          <view class="left">
+            <text class="name">{{ item.sourceName }}</text>
+            <text class="url">{{ item.apiUrl }}</text>
+            <text class="url">域名：{{ item.domainUrl }}</text>
+          </view>
+          <view class="right">
+            <text class="status" :class="{ active: item.status === 1 }">{{ item.status === 1 ? '启用' : '禁用' }}</text>
+            <button class="small" @click="fillForm(item)">编辑</button>
+            <button class="small" @click="toggleStatus(item)">{{ item.status === 1 ? '禁用' : '启用' }}</button>
+            <button class="small danger" @click="deleteSource(item.id)">删除</button>
+          </view>
+        </view>
       </view>
     </view>
 
-    <scroll-view scroll-y class="dashboard-content">
-      
-      <view class="section-title">核心数据概览</view>
-      <view class="data-grid">
-        <view class="data-card" v-for="(item, index) in dataBoard" :key="index">
-          <text class="data-title">{{ item.title }}</text>
-          <text class="data-value" :style="{ color: item.color }">{{ item.value }}</text>
-        </view>
+    <view class="panel">
+      <text class="panel-title">广告管理（基础）</text>
+      <view class="ops-row">
+        <button class="btn" @click="loadAdList">刷新广告</button>
       </view>
-
-      <view class="section-title mt-40">快捷入口</view>
-      <view class="menu-grid">
-        <view class="menu-item" v-for="(menu, index) in menus" :key="index" @click="handleMenuClick(menu.name)">
-          <view class="menu-icon-box" :style="{ background: menu.bg }">
-            <text class="menu-icon">{{ menu.icon }}</text>
-          </view>
-          <text class="menu-name">{{ menu.name }}</text>
-        </view>
+      <view class="ad-item" v-for="ad in adList" :key="ad.id">
+        <text>{{ ad.title || '未命名广告' }}</text>
       </view>
-
-    </scroll-view>
+      <text class="tip" v-if="adList.length === 0">暂无广告数据</text>
+    </view>
   </view>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { reactive, ref } from 'vue';
+import { onLoad } from '@dcloudio/uni-app';
+import request from '@/utils/request.js';
 
-const adminName = ref('Admin');
-
-// 假装从接口获取看板数据
-const dataBoard = ref([
-  { title: '总用户数', value: '12,450', color: '#1890ff' },
-  { title: '总视频数', value: '8,320', color: '#722ed1' },
-  { title: '今日新增视频', value: '45', color: '#52c41a' },
-  { title: '今日活跃用户', value: '3,120', color: '#faad14' }
-]);
-
-const menus = ref([
-  { name: '视频管理', icon: '🎬', bg: 'rgba(24, 144, 255, 0.1)' },
-  { name: '用户管理', icon: '👥', bg: 'rgba(114, 46, 209, 0.1)' },
-  { name: '分类管理', icon: '📁', bg: 'rgba(82, 196, 26, 0.1)' },
-  { name: '系统设置', icon: '⚙️', bg: 'rgba(250, 173, 20, 0.1)' }
-]);
-
-onMounted(() => {
-  const userInfo = uni.getStorageSync('userInfo');
-  if (userInfo && userInfo.username) {
-    adminName.value = userInfo.username;
-  }
+const userInfo = ref({});
+const sourceList = ref([]);
+const adList = ref([]);
+const form = reactive({
+  id: null,
+  sourceName: '',
+  apiUrl: '',
+  domainUrl: ''
 });
 
-const handleMenuClick = (name) => {
-  uni.showToast({
-    title: `[${name}] 模块开发中`,
-    icon: 'none'
-  });
+const ensureAdmin = () => {
+  const localUser = uni.getStorageSync('userInfo') || {};
+  userInfo.value = localUser;
+  if (!localUser?.isAdmin) {
+    uni.showToast({ title: '无权限访问', icon: 'none' });
+    setTimeout(() => uni.reLaunch({ url: '/pages/index/index' }), 800);
+    return false;
+  }
+  return true;
 };
 
-const handleAdminLogout = () => {
-  uni.showModal({
-    title: '退出系统',
-    content: '确定要退出管理控制台吗？',
-    confirmColor: '#1890ff',
-    success: (res) => {
-      if (res.confirm) {
-        uni.removeStorageSync('token');
-        uni.removeStorageSync('userInfo');
-        uni.reLaunch({
-          url: '/pages/login/login'
-        });
-      }
-    }
-  });
+onLoad(async () => {
+  if (!ensureAdmin()) return;
+  await Promise.all([loadSourceList(), loadAdList()]);
+});
+
+const loadSourceList = async () => {
+  try {
+    const res = await request({ url: '/admin/source/list', data: { page: 1, size: 50 } });
+    sourceList.value = res?.records || [];
+  } catch (e) {
+    sourceList.value = [];
+  }
+};
+
+const saveSource = async () => {
+  if (!form.sourceName.trim()) {
+    uni.showToast({ title: '请填写API名字', icon: 'none' });
+    return;
+  }
+  if (!/^https?:\/\/.+/i.test(form.apiUrl) || !form.apiUrl.includes('/api.php/provide/vod')) {
+    uni.showToast({ title: 'API地址格式不正确', icon: 'none' });
+    return;
+  }
+
+  if (form.id) {
+    await request({ url: '/admin/source/update', method: 'PUT', data: { ...form, status: 1 } });
+    uni.showToast({ title: '修改成功', icon: 'none' });
+  } else {
+    await request({ url: '/admin/source/save', method: 'POST', data: { ...form, status: 1 } });
+    uni.showToast({ title: '新增成功', icon: 'none' });
+  }
+
+  clearForm();
+  await loadSourceList();
+};
+
+const fillForm = (item) => {
+  form.id = item.id;
+  form.sourceName = item.sourceName;
+  form.apiUrl = item.apiUrl;
+  form.domainUrl = item.domainUrl;
+};
+
+const clearForm = () => {
+  form.id = null;
+  form.sourceName = '';
+  form.apiUrl = '';
+  form.domainUrl = '';
+};
+
+const deleteSource = async (id) => {
+  await request({ url: `/admin/source/delete/${id}`, method: 'DELETE' });
+  uni.showToast({ title: '删除成功', icon: 'none' });
+  await loadSourceList();
+};
+
+const toggleStatus = async (item) => {
+  const next = item.status === 1 ? 0 : 1;
+  await request({ url: `/admin/source/status/${item.id}/${next}`, method: 'PUT' });
+  await loadSourceList();
+};
+
+const syncVideo = async () => {
+  uni.showLoading({ title: '同步中', mask: true });
+  try {
+    await request({ url: '/api/sync/video', method: 'POST' });
+    uni.hideLoading();
+    uni.showToast({ title: '已触发同步', icon: 'none' });
+  } catch (e) {
+    uni.hideLoading();
+  }
+};
+
+const loadAdList = async () => {
+  try {
+    const res = await request({ url: '/api/ad/list' });
+    adList.value = Array.isArray(res) ? res : [];
+  } catch (e) {
+    adList.value = [];
+  }
+};
+
+const logout = () => {
+  uni.removeStorageSync('token');
+  uni.removeStorageSync('userInfo');
+  uni.reLaunch({ url: '/pages/index/index' });
 };
 </script>
 
 <style scoped>
-.admin-dashboard {
-  min-height: 100vh;
-  background-color: #141414; /* B端极深灰 */
-  display: flex;
-  flex-direction: column;
-}
-
-/* Header 样式 */
-.admin-header {
-  height: 120rpx;
-  background-color: #1e1e2d; /* 沉稳深蓝/灰 */
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 40rpx;
-  box-shadow: 0 4rpx 12rpx rgba(0,0,0,0.3);
-  z-index: 10;
-}
-.logo-text {
-  color: #fff;
-  font-size: 34rpx;
-  font-weight: bold;
-  letter-spacing: 2rpx;
-}
-.header-right {
-  display: flex;
-  align-items: center;
-}
-.admin-name {
-  color: #a1a1aa;
-  font-size: 26rpx;
-  margin-right: 30rpx;
-}
-.logout-tag {
-  background-color: rgba(245, 34, 45, 0.15);
-  color: #ff4d4f;
-  border: 1px solid rgba(245, 34, 45, 0.3);
-  padding: 8rpx 20rpx;
-  border-radius: 8rpx;
-  font-size: 24rpx;
-  cursor: pointer;
-}
-
-/* 内容区 */
-.dashboard-content {
-  flex: 1;
-  padding: 40rpx;
-  box-sizing: border-box;
-}
-.section-title {
-  color: #e5e5e5;
-  font-size: 32rpx;
-  font-weight: bold;
-  margin-bottom: 30rpx;
-  border-left: 8rpx solid #1890ff;
-  padding-left: 16rpx;
-}
-.mt-40 {
-  margin-top: 60rpx;
-}
-
-/* Data Cards 样式 */
-.data-grid {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-}
-.data-card {
-  width: 48%; /* 2x2 排列 */
-  background-color: #1e1e2d;
-  border-radius: 16rpx;
-  padding: 40rpx 30rpx;
-  margin-bottom: 30rpx;
-  box-sizing: border-box;
-  box-shadow: 0 8rpx 24rpx rgba(0,0,0,0.2);
-  display: flex;
-  flex-direction: column;
-}
-.data-title {
-  color: #8c8c93;
-  font-size: 28rpx;
-  margin-bottom: 20rpx;
-}
-.data-value {
-  font-size: 56rpx;
-  font-weight: bold;
-  font-family: 'Courier New', Courier, monospace; /* 数字强化 */
-}
-
-/* Menu Grid 宫格样式 */
-.menu-grid {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-}
-.menu-item {
-  width: 22%;
-  background-color: #1e1e2d;
-  border-radius: 16rpx;
-  padding: 40rpx 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  box-shadow: 0 4rpx 16rpx rgba(0,0,0,0.15);
-  transition: transform 0.2s;
-}
-.menu-item:active {
-  transform: scale(0.96);
-}
-.menu-icon-box {
-  width: 80rpx;
-  height: 80rpx;
-  border-radius: 20rpx;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  margin-bottom: 20rpx;
-}
-.menu-icon {
-  font-size: 40rpx;
-}
-.menu-name {
-  color: #d1d1d6;
-  font-size: 26rpx;
-}
+.admin-container { min-height: 100vh; background-color: #111114; padding: 26rpx; color: #fff; }
+.header { margin-bottom: 20rpx; }
+.title { font-size: 44rpx; font-weight: bold; color: #00d26a; display: block; }
+.subtitle { font-size: 24rpx; color: #858b98; }
+.ops-row { display: flex; gap: 16rpx; margin: 16rpx 0; flex-wrap: wrap; }
+.btn { background: #2a2f3a; color: #d6d9e0; border-radius: 10rpx; font-size: 24rpx; }
+.btn-primary { background: #00d26a; color: #fff; }
+.btn-warn { background: #4d3030; color: #ffcaca; }
+.panel { margin-top: 20rpx; background: #1a1e28; border: 1px solid #2c3342; border-radius: 16rpx; padding: 20rpx; }
+.panel-title { font-size: 30rpx; color: #f0f4ff; font-weight: 600; display: block; margin-bottom: 10rpx; }
+.tip { font-size: 22rpx; color: #8790a5; display: block; margin-bottom: 12rpx; }
+.form-grid { display: grid; gap: 12rpx; }
+.input { background: #242a36; height: 78rpx; border-radius: 10rpx; color: #fff; padding: 0 20rpx; font-size: 24rpx; }
+.ph { color: #5f687d; }
+.source-list { margin-top: 10rpx; }
+.source-item { display: flex; justify-content: space-between; gap: 12rpx; background: #202532; border-radius: 12rpx; padding: 14rpx; margin-bottom: 12rpx; }
+.left { flex: 1; min-width: 0; }
+.name { color: #fff; font-size: 26rpx; display: block; }
+.url { color: #99a1b3; font-size: 22rpx; display: block; margin-top: 6rpx; word-break: break-all; }
+.right { display: flex; flex-direction: column; gap: 8rpx; align-items: stretch; }
+.status { font-size: 22rpx; color: #d59f7a; text-align: right; }
+.status.active { color: #00d26a; }
+.small { font-size: 22rpx; background: #2e3544; color: #d7dbea; border-radius: 8rpx; }
+.small.danger { background: #4a2a2a; color: #ffb7b7; }
+.ad-item { font-size: 24rpx; color: #d7dbea; padding: 8rpx 0; border-bottom: 1px solid #2c3342; }
 </style>
